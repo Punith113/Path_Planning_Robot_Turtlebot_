@@ -1,0 +1,6 @@
+<launch>
+<!-- My Package launch file -->
+<node pkg="mini_project" type="mini_project.py" name="mini_project" output="screen">
+</node>
+</launch>
+

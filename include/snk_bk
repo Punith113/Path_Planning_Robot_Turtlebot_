@@ -1,0 +1,146 @@
+#!/usr/bin/env python
+from __future__ import print_function
+import rospy
+from geometry_msgs.msg import Twist
+from sensor_msgs.msg import LaserScan
+from math import radians
+import numpy as np
+
+state = 0
+regions = {
+    'right':    0,
+    'froRight': 0,
+    'front':    0,
+    'froLeft':  0,
+    'left':     0
+}
+
+def laser_read(msg):
+    global regions
+    regions = {
+        'right':    min(msg.ranges[0:71]),
+        'froRight': min(msg.ranges[72:143]),
+        'front':    min(msg.ranges[144:215]),
+        'froLeft':  min(msg.ranges[216:287]),
+        'left':     min(msg.ranges[288:359])
+    }
+    todo(msg)
+
+def change_state(new_state):
+    global state
+    if new_state != state:
+        state = new_state
+
+def todo(msg):
+    maxx = msg.range_max
+    minn = msg.range_min
+    infy = float('inf')
+    global regions
+    reg = regions
+    d = 1.2
+    rightCount = np.sum(np.less(msg.ranges[72:143],maxx))
+    leftCount = np.sum(np.less(msg.ranges[216:287],maxx))
+    if reg["front"] > d and   reg["froLeft"] > d and  reg["froRight"] > d:
+        if reg["front"] > maxx and reg["left"] > maxx and reg["right"] > maxx:
+            print("Freedom!")
+            change_state(0)
+        elif reg["right"] > 4.5 and reg["left"] > d and reg["front"] > d:
+            if reg["right"] > maxx and reg["left"] < maxx and reg["front"] < maxx:
+                print("in right if!")
+                change_state(0)
+            elif reg["right"] < maxx and reg["front"] < maxx:
+                print("in right else!")
+                change_state(2)
+        elif reg["front"] > maxx and reg["left"] > maxx:
+            if msg.ranges[0] < maxx or msg.ranges[359] != infy:
+                print("Stop!")
+                change_state(3)
+        else:
+            print("first")
+            change_state(0)
+    elif reg["front"] < d and reg["froLeft"] > d and reg["froRight"] > d:
+        if msg.ranges[0] > maxx and msg.ranges[359] > maxx:
+            if rightCount > leftCount :
+                print("More left space!")
+                change_state(1)
+            else:
+                print("More right space!")
+                change_state(2)
+        else:
+            print("second")
+            change_state(1)
+    elif reg["front"] > d and reg["froLeft"] > d and reg["froRight"] < d:
+        print("third")
+        change_state(1)
+    elif reg["front"] > d and reg["froLeft"] < d and reg["froRight"] > d:
+        print("fourth")
+        change_state(2)
+    elif reg["front"] < d and reg["froLeft"] > d and reg["froRight"] < d:
+        print("fifth")
+        change_state(1)
+    elif reg["front"] < d and reg["froLeft"] < d and reg["froRight"] > d:
+        print("sixth")
+        change_state(2)
+    elif reg["front"] < d and reg["froLeft"] < d and reg["froRight"] < d:
+        print("seventh")
+        change_state(3)
+    elif reg["front"] > d and reg["froLeft"] < d and reg["froRight"] < d:
+        print("eighth")
+        change_state(0)
+    else:
+        print("Panic!")
+
+def go_straight():
+    #print("Goin' straight!")
+    move = Twist()
+    move.linear.x = 0.3
+    move.angular.z = 0.0
+    return move
+
+def turn_left():
+    #print("Turning left!")
+    move = Twist()
+    move.linear.x = 0.0
+    move.angular.z = 0.3
+    return move
+
+def turn_right():
+    #print("Turning right!")
+    move = Twist()
+    move.linear.x = 0.0
+    move.angular.z = -0.6
+    return move
+
+def stop():
+    print("Stopped!")
+    move = Twist()
+    move.linear.x = 0.0
+    move.angular.z = radians(1000)
+    return move
+
+def main():
+    global pub
+    rospy.init_node("mini_node")
+    pub = rospy.Publisher('/mobile_base/commands/velocity', Twist, queue_size = 10)
+    sub = rospy.Subscriber('/laserscan', LaserScan, laser_read)
+    rate = rospy.Rate(20)
+    while not rospy.is_shutdown():
+        move = Twist()
+        if state == 0:
+            move = go_straight()
+        elif state == 1:
+            move = turn_left()
+        elif state == 2:
+            move = turn_right()
+        elif state == 3:
+            move = stop()
+        else:
+            print("Panic!")
+        pub.publish(move)
+        rate.sleep()
+
+if __name__ == '__main__':
+    try:
+        main()
+    except:
+        print("Something wrong!")
